@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Dual Editor States</title>
+    <link rel="stylesheet" href="./css/Draft.css" charset="utf-8">
+    <link rel="stylesheet" href="./css/katex.min.css" charset="utf-8">
+  </head>
+  <body>
+    <h1>Basic Example</h1>
+    <i>Press enter to swap between editors.</i>
+    <div id="target"></div>
+
+    <script src='./js/katex.min.js'></script>
+    <script src='./js/react.js'></script>
+    <script src='./js/react-dom.js'></script>
+    <script src='./js/immutable.min.js'></script>
+    <script src='./js/es6-shim.js'></script>
+    <script src='./js/babel.min.js'></script>
+    <script src='./js/Draft.js'></script>
+    <script type="text/babel">
+      const editorStyle = {
+        margin: 10,
+        border: '1px solid black',
+        padding: 5,
+      };
+
+      const closedEditorStyle = {
+        margin: 10,
+        border: '1px solid black',
+        padding: 5,
+        background: '#ddd',
+      };
+
+      /**
+       * Basic Example
+       */
+      class KatexInput extends React.Component {
+        constructor(props) {
+          super(props);
+          const decoractor = new Draft.CompositeDecorator([
+            {
+              strategy: findMath,
+              component: InlineMath,
+            },
+          ]);
+
+          this.setHelperState = this.setHelperState.bind(this);
+          this.handleKeyCommand = this.handleKeyCommand.bind(this);
+          this.keyBindingFn = this.keyBindingFn.bind(this);
+          this.state = {
+            editingCore: true,
+            editorState: Draft.EditorState.createEmpty(decoractor),
+            helperState: Draft.EditorState.createEmpty(),
+          };
+        }
+
+        setHelperState(helperState) {
+          this.setState({
+            helperState,
+          });
+        }
+
+        openHelper() {
+          const math = this.state.helperState.getCurrentContent().getPlainText();
+
+          // Cache state to have helper insert as a live preview.
+          this.setState({
+            editingCore: !this.state.editingCore,
+            helperState: Draft.EditorState.createEmpty(),
+            editorState: math !== '' ? insertMath(this.state.editorState, math) : this.state.editorState,
+          }, () => {
+            if (this.state.editingCore) {
+              this.refs.core.focus();
+            } else {
+              this.refs.helper.focus();
+            }
+          });
+        }
+
+        handleKeyCommand(command) {
+          if (command === 'open-helper') {
+            this.openHelper();
+            return true;
+          }
+
+          return  false;
+        }
+
+        keyBindingFn(e) {
+          // Enter Key
+          if (e.keyCode === 13) {
+            e.preventDefault();
+            return 'open-helper';
+          }
+
+          return Draft.getDefaultKeyBinding(e);
+        }
+
+        render() {
+          return (
+            <div>
+              <h3>Main</h3>
+              <div
+                onClick={() => this.refs.core.focus()}
+                style={!this.state.editingCore ? closedEditorStyle : editorStyle}
+              >
+                <Draft.Editor
+                  ref="core"
+                  editorState={this.state.editorState}
+                  readOnly={!this.state.editingCore}
+                  onChange={(editorState) => this.setState({ editorState })}
+                  handleKeyCommand={this.handleKeyCommand}
+                  keyBindingFn={this.keyBindingFn}
+                />
+              </div>
+              <h3>Math</h3>
+              <div
+                onClick={() => this.refs.helper.focus()} style={editorStyle}
+                style={this.state.editingCore ? closedEditorStyle : editorStyle}
+              >
+                <Draft.Editor
+                  ref="helper"
+                  editorState={this.state.helperState}
+                  readOnly={this.state.editingCore}
+                  onChange={this.setHelperState}
+                  handleKeyCommand={this.handleKeyCommand}
+                  keyBindingFn={this.keyBindingFn}
+                />
+              </div>
+            </div>
+          );
+        }
+      }
+
+      function insertMath(editorState, content) {
+        const currentContent = editorState.getCurrentContent();
+        const entity = Draft.Entity.create(
+          'TEX',
+          'IMMUTABLE',
+          { content }
+        );
+
+        const selection = editorState.getSelection();
+
+        const firstBlank = Draft.Modifier.insertText(
+          currentContent,
+          selection,
+          ' ',
+          null,
+          null
+        );
+
+        const withEntity = Draft.Modifier.insertText(
+          firstBlank,
+          selection,
+          ' ',
+          null,
+          entity
+        );
+
+        const withBlank = Draft.Modifier.insertText(
+          withEntity,
+          selection,
+          ' ',
+          null,
+          null
+        );
+
+        return Draft.EditorState.push(
+          editorState,
+          withBlank,
+          'insert-text'
+        );
+      }
+
+      function findMath(contentBlock, callback) {
+        contentBlock.findEntityRanges(
+          (character) => {
+            const entityKey = character.getEntity();
+            return (
+              entityKey !== null &&
+              Draft.Entity.get(entityKey).getType() === 'TEX'
+            );
+          },
+          callback
+        );
+      }
+
+      class InlineMath extends React.Component {
+        componentDidMount() {
+          const { content } = Draft.Entity.get(this.props.entityKey).getData();
+          katex.render(content, this.refs.math);
+        }
+
+        render() {
+          return (
+            <span ref="math" contentEditable="false">{' '}</span>
+          );
+        }
+      }
+
+      ReactDOM.render(<KatexInput />, document.getElementById('target'));
+    </script>
+  </body>
+</html>
